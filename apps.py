@@ -1578,19 +1578,45 @@ with tabs[4]:
         """
     )
 
+    st.dataframe(ml_df.head(50), width='stretch', height=240)
+
     col_lb = st.columns(3)
-    col_lb[0].metric("Total samples", len(ml_df))
-    col_lb[1].metric("Unicorns (label=1)", int(ml_df["label"].sum()))
-    col_lb[2].metric("Zombies  (label=0)", int((ml_df["label"] == 0).sum()))
+    col_lb[0].metric("Total samples", len(ml_df),
+                     help="Total number of simulated startups in the ML dataset.")
+    col_lb[1].metric("Unicorns (label=1)", int(ml_df["label"].sum()),
+                     help="Startups that survived to the final generation.")
+    col_lb[2].metric("Zombies  (label=0)", int((ml_df["label"] == 0).sum()),
+                     help="Startups that went extinct before the final generation.")
 
     st.markdown("---")
 
     # ── Feature correlation heatmap ────────────────────────────────────────────
+    st.markdown("#### Feature Correlation Matrix — Which Early Signals Actually Matter?")
     st.markdown(
-        "#### Feature Correlation Matrix\n\n"
-        "High correlation with `label` indicates predictive power.  "
-        "Note how `extinct_before5` and `z_at_gen5` are strong "
-        "early warning signals."
+        """
+        This heatmap shows how strongly every pair of features moves together.
+        Values run from **−1** (perfect opposites) to **+1** (perfect match),
+        with **0** meaning no relationship at all.
+
+        *(Think of it like a compatibility chart. If two things score +1 they
+        always go up and down together — like temperature and ice cream sales.
+        If they score −1 they move in opposite directions — like temperature and
+        hot soup sales. Zero means they are completely unrelated.)*
+
+        **The most important column is `label`** — features with a strong
+        positive or negative correlation to `label` are the ones the model will
+        lean on most heavily when making predictions.
+
+        🔍 **What to look for:**
+        - `extinct_before5` strongly **negative** with `label` = startups that
+          died early almost never become unicorns *(obvious, but confirms the
+          data is sensible)*.
+        - `z_at_gen5` strongly **positive** with `label` = more users at week 5
+          = better long-run survival odds *(early traction predicts the future)*.
+        - Features that are **highly correlated with each other** (but not with
+          `label`) add little extra information — the model can detect this
+          redundancy automatically.
+        """
     )
 
     feature_cols = [c for c in ml_df.columns if c not in ["sim_id"]]
@@ -1614,11 +1640,32 @@ with tabs[4]:
     st.markdown("---")
 
     # ── Model selection & hyperparameters ─────────────────────────────────────
-    st.markdown("#### Model Configuration")
+    st.markdown("#### Model Configuration — Choose Your Prediction Algorithm")
     st.markdown(
-        "Select a classifier and tune its hyperparameters.  "
-        "We wrap it in a `sklearn.pipeline.Pipeline` with "
-        "`StandardScaler` for robustness."
+        """
+        Pick a machine learning algorithm and tune its settings, then click
+        **Train Model** to fit it on the simulation data and see how well it
+        predicts unicorns from early-stage signals.
+
+        *(Choosing an algorithm is like choosing a tool for a job.
+        A hammer, screwdriver, and wrench all drive fasteners — but each
+        has its own strengths depending on the situation.)*
+
+        | Algorithm | Plain English | Best for |
+        |---|---|---|
+        | **Random Forest** | A committee of many decision trees voting together | Robust, handles noise well, shows feature importance |
+        | **Gradient Boosting** | Trees built one after another, each fixing the last one's mistakes | Often highest accuracy, slower to train |
+        | **Logistic Regression** | Draws a straight dividing line between classes | Fast, interpretable, works well on linearly separable problems |
+
+        **Hyperparameters** are the "dials" you set before training — like choosing
+        how many layers to bake into a cake before putting it in the oven.
+        The model learns everything else from the data itself.
+
+        **Test Set Fraction** = the share of startups held back for evaluation.
+        *(Like a teacher keeping 20% of exam questions secret until test day —
+        the model never sees this data during training, so its score on it is
+        an honest measure of real-world prediction ability.)*
+        """
     )
 
     col_m1, col_m2 = st.columns([1, 2])
@@ -1691,6 +1738,20 @@ with tabs[4]:
         st.markdown("---")
         m = st.session_state["clf_metrics"]
 
+        st.markdown("#### Model Performance Metrics")
+        st.markdown(
+            """
+            These four numbers summarise how well the model predicts unicorns
+            vs zombies on data it has **never seen before** (the held-out test set).
+
+            | Metric | Plain English | Good value |
+            |---|---|---|
+            | **ROC-AUC** | If you pick one random unicorn and one random zombie, how often does the model score the unicorn higher? | Closer to 1.0 = better; 0.5 = random guessing |
+            | **Avg Precision** | Of all the startups the model flagged as unicorns, what fraction actually were? | Closer to 1.0 = fewer false alarms |
+            | **5-Fold CV AUC** | Average AUC across 5 separate train/test splits — tests consistency | Narrow ± range = stable model |
+            | **Model** | Which algorithm was trained | — |
+            """
+        )
         # KPIs
         c1, c2, c3, c4 = st.columns(4)
         c1.metric("ROC-AUC",        f"{m['auc']:.3f}")
@@ -1699,12 +1760,29 @@ with tabs[4]:
         c4.metric("Model",          m["model_name"])
 
         # ── ROC curve ─────────────────────────────────────────────────────────
-        st.markdown("#### ROC Curve")
+        st.markdown("#### ROC Curve — The Model's Sensitivity vs False Alarm Trade-Off")
         st.markdown(
-            "The ROC curve plots the trade-off between True Positive Rate "
-            "(sensitivity) and False Positive Rate (1-specificity) across all "
-            "decision thresholds.  **AUC = 1.0** is perfect; **AUC = 0.5** is "
-            "random guessing."
+            """
+            The ROC curve shows how the model performs across **every possible
+            decision threshold** — from very lenient (call almost everything a
+            unicorn) to very strict (only call something a unicorn if nearly certain).
+
+            *(Think of a smoke detector. Set it too sensitive and it screams every
+            time you make toast — lots of false alarms. Set it too conservative
+            and it might miss a real fire. The ROC curve maps out every possible
+            setting of that dial.)*
+
+            - **X-axis (False Positive Rate):** How often does the model wrongly
+              call a zombie a unicorn? *(How often does the smoke alarm trigger
+              for burnt toast?)* Lower = better.
+            - **Y-axis (True Positive Rate):** How often does the model correctly
+              identify a real unicorn? *(How often does it catch a real fire?)*
+              Higher = better.
+            - The **diagonal dashed line** is a random-guess baseline — a model
+              that just flips a coin. Any curve above this line is better than chance.
+            - **AUC** = Area Under the Curve. A perfect model (AUC = 1.0) hugs
+              the top-left corner. AUC = 0.5 is the coin-flip diagonal.
+            """
         )
 
         fpr, tpr, _ = roc_curve(m["y_test"], m["y_prob"])
@@ -1730,7 +1808,31 @@ with tabs[4]:
         st.plotly_chart(fig_roc, width='stretch')
 
         # ── Confusion matrix ───────────────────────────────────────────────────
-        st.markdown("#### Confusion Matrix")
+        st.markdown("#### Confusion Matrix — Where Does the Model Go Wrong?")
+        st.markdown(
+            """
+            The confusion matrix breaks down every prediction the model made
+            on the test set into four buckets:
+
+            | | Predicted: Zombie | Predicted: Unicorn |
+            |---|---|---|
+            | **Actual: Zombie** | ✅ True Negative *(correctly spotted a zombie)* | ❌ False Positive *(wrongly hyped a zombie as a unicorn)* |
+            | **Actual: Unicorn** | ❌ False Negative *(missed a real unicorn)* | ✅ True Positive *(correctly identified a unicorn)* |
+
+            *(Like a talent scout. True Positives = stars they correctly signed.
+            False Positives = flops they wasted money on. False Negatives = stars
+            they let walk out the door. True Negatives = no-hopers they correctly
+            passed on.)*
+
+            🔍 **What to look for:**
+            - Big numbers on the **diagonal** (top-left, bottom-right) = model is
+              getting most decisions right.
+            - A large **False Positive** number = model is over-optimistic, calling
+              too many zombies unicorns *(a VC who over-invests and loses money)*.
+            - A large **False Negative** number = model is over-cautious, missing
+              real winners *(a VC who under-invests and misses the next big startup)*.
+            """
+        )
 
         cm = confusion_matrix(m["y_test"], m["y_pred"])
         fig_cm, ax_cm = plt.subplots(figsize=(5, 4))
@@ -1752,7 +1854,23 @@ with tabs[4]:
         plt.close(fig_cm)
 
         # ── Classification report ──────────────────────────────────────────────
-        st.markdown("#### Classification Report")
+        st.markdown("#### Classification Report — Full Precision & Recall Breakdown")
+        st.markdown(
+            """
+            This report gives a more granular breakdown of model performance
+            for each class separately:
+
+            - **Precision** = "Of all the startups I called a Unicorn, how many
+              actually were?" *(Quality of positive predictions — low precision
+              means too many false alarms)*.
+            - **Recall** = "Of all the actual Unicorns, how many did I catch?"
+              *(Coverage — low recall means too many missed opportunities)*.
+            - **F1-Score** = The harmonic mean of precision and recall — a single
+              number that balances both. *(Like a combined batting average that
+              rewards consistency across both metrics)*.
+            - **Support** = How many real examples of each class were in the test set.
+            """
+        )
         report_str = classification_report(
             m["y_test"], m["y_pred"],
             target_names=["Zombie", "Unicorn"],
@@ -1761,10 +1879,29 @@ with tabs[4]:
 
         # ── Feature importances ───────────────────────────────────────────────
         if hasattr(st.session_state["clf_pipeline"]["clf"], "feature_importances_"):
-            st.markdown("#### Feature Importances")
+            st.markdown("#### Feature Importances — What Early Signals Does the Model Rely On?")
             st.markdown(
-                "Which early-stage KPIs are most predictive of long-run survival?  "
-                "The bar chart below answers this question for tree-based models."
+                """
+                This bar chart reveals **which early-stage metrics the model found
+                most useful** when deciding unicorn vs zombie. Longer bar = more
+                influential in the decision.
+
+                *(Think of it like asking a seasoned investor: 'What's the single
+                biggest thing you look at when evaluating a Seed-stage startup?'
+                This chart gives you the data-driven answer based on 1,000
+                simulated startups.)*
+
+                🔍 **What to look for:**
+                - If **`extinct_before5`** tops the chart: the model's biggest signal
+                  is whether the startup survived its first 5 weeks *(brutal but true —
+                  early death strongly predicts eventual death)*.
+                - If **`w_slope_early`** ranks high: the model cares about whether
+                  the normalised valuation was trending upward *(momentum matters)*.
+                - If **`z_at_gen5`** is dominant: raw user count at week 5 is the
+                  strongest predictor *(traction over theories)*.
+                - Features near zero contributed almost nothing — they could be
+                  dropped without meaningfully hurting accuracy.
+                """
             )
             importances = (
                 st.session_state["clf_pipeline"]["clf"].feature_importances_
@@ -1789,11 +1926,28 @@ with tabs[4]:
             st.plotly_chart(fig_fi, width='stretch')
 
         # ── Score distribution ─────────────────────────────────────────────────
-        st.markdown("#### Predicted Probability Distribution")
+        st.markdown("#### Predicted Probability Distribution — Can the Model Tell Them Apart?")
         st.markdown(
-            "Ideally, the model pushes Unicorn scores toward 1 and "
-            "Zombie scores toward 0 — a **bimodal** distribution indicates "
-            "good separation."
+            """
+            For each startup in the test set, the model outputs a number between
+            0 and 1 — its **confidence that the startup is a Unicorn**.
+            This chart shows how those confidence scores are distributed for actual
+            Unicorns (blue) vs actual Zombies (red).
+
+            *(Think of it like a judge rating contestants. If the judge is good,
+            they'll give high scores consistently to the real talent and low scores
+            to those who don't belong — two separate bumps. If the judge is bad,
+            scores will be all mixed up in the middle.)*
+
+            🔍 **What to look for:**
+            - **Well-separated peaks** = the model is confident and correct.
+              Blue bars bunched near 1.0, red bars bunched near 0.0 = excellent.
+            - **Overlapping bars in the middle** = the model is uncertain for many
+              startups — it cannot clearly separate the two groups from early signals.
+            - A single **merged bell curve** = the model has essentially given up
+              and is assigning near-random scores. This would mean early-stage data
+              alone simply cannot predict long-run survival at your current parameter settings.
+            """
         )
 
         fig_score = go.Figure()
